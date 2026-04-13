@@ -421,6 +421,70 @@ Utilisez-le tel quel. Ou démontez-le et faites-en le vôtre.
 
 ## Fonctionnalités principales
 
+### Vue d'ensemble de l'architecture
+
+```mermaid
+flowchart TB
+    subgraph UserLayer["Couche Utilisateur"]
+        UI[Passerelle Web / Clients IM]
+        CC[Claude Code CLI]
+        API[REST API]
+    end
+
+    subgraph CoreEngine["Moteur Central"]
+        OM[Orchestrateur]
+        CM[Gestionnaire de Contexte]
+        TM[Gestionnaire de Tâches]
+    end
+
+    subgraph SubAgents["Pool de Sous-Agents"]
+        SA1[Agent de Recherche]
+        SA2[Agent de Code]
+        SA3[Agent de Rédaction]
+        SA4[Agent d'Analyse]
+    end
+
+    subgraph MemoryLayer["Couche Mémoire"]
+        STM[Mémoire à court terme<br/>Contexte de session]
+        LTM[Mémoire à long terme<br/>Stockage vectoriel]
+        PM[Mémoire procédurale<br/>Skills et Outils]
+    end
+
+    subgraph SandboxLayer["Couche Sandbox"]
+        FS[Système de fichiers<br/>/mnt/workspace]
+        EXEC[Exécution Bash<br/>Conteneur isolé]
+        NET[Accès réseau<br/>Contrôlé]
+    end
+
+    subgraph ExternalTools["Outils Externes"]
+        MCP[Serveurs MCP]
+        WEB[Recherche/Récupération Web]
+        CUSTOM[Outils Python personnalisés]
+    end
+
+    UserLayer --> CoreEngine
+    CoreEngine --> SubAgents
+    CoreEngine <--> MemoryLayer
+    SubAgents --> SandboxLayer
+    SubAgents --> ExternalTools
+    SandboxLayer -.-> MemoryLayer
+    
+    style UserLayer fill:#e1f5fe
+    style CoreEngine fill:#fff3e0
+    style SubAgents fill:#f3e5f5
+    style MemoryLayer fill:#e8f5e9
+    style SandboxLayer fill:#ffebee
+    style ExternalTools fill:#fff8e1
+```
+
+**Description de l'architecture :**
+- **Couche Utilisateur** : Points d'entrée des requêtes utilisateur (Web, IM, API, CLI)
+- **Moteur Central** : Responsable de l'orchestration des tâches, de la gestion du contexte et de la planification
+- **Pool de Sous-Agents** : Agents spécialisés exécutant des tâches spécifiques
+- **Couche Mémoire** : Gère le contexte de session à court terme et la mémoire vectorielle à long terme
+- **Couche Sandbox** : Fournit un environnement sécurisé pour les opérations sur les fichiers et l'exécution de code
+- **Outils Externes** : Intègre les services MCP, les outils réseau et les extensions personnalisées
+
 ### Skills et outils
 
 Les skills sont ce qui permet à DeerFlow de faire *pratiquement n'importe quoi*.

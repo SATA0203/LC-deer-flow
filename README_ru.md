@@ -327,6 +327,70 @@ DeerFlow 2.0 — это Super Agent Harness «из коробки». Batteries i
 
 ## Core Features
 
+### Обзор архитектуры
+
+```mermaid
+flowchart TB
+    subgraph UserLayer["Пользовательский слой"]
+        UI[Веб-шлюз / IM-клиенты]
+        CC[Claude Code CLI]
+        API[REST API]
+    end
+
+    subgraph CoreEngine["Основной движок"]
+        OM[Оркестратор]
+        CM[Менеджер контекста]
+        TM[Менеджер задач]
+    end
+
+    subgraph SubAgents["Пул суб-агентов"]
+        SA1[Агент исследования]
+        SA2[Кодинг-агент]
+        SA3[Агент написания]
+        SA4[Агент анализа]
+    end
+
+    subgraph MemoryLayer["Слой памяти"]
+        STM[Краткосрочная память<br/>Контекст сессии]
+        LTM[Долгосрочная память<br/>Векторное хранилище]
+        PM[Процедурная память<br/>Навыки и инструменты]
+    end
+
+    subgraph SandboxLayer["Слой песочницы"]
+        FS[Файловая система<br/>/mnt/workspace]
+        EXEC[Выполнение Bash<br/>Изолированный контейнер]
+        NET[Сетевой доступ<br/>Контролируемый]
+    end
+
+    subgraph ExternalTools["Внешние инструменты"]
+        MCP[MCP-серверы]
+        WEB[Поиск/загрузка из веба]
+        CUSTOM[Кастомные Python-инструменты]
+    end
+
+    UserLayer --> CoreEngine
+    CoreEngine --> SubAgents
+    CoreEngine <--> MemoryLayer
+    SubAgents --> SandboxLayer
+    SubAgents --> ExternalTools
+    SandboxLayer -.-> MemoryLayer
+    
+    style UserLayer fill:#e1f5fe
+    style CoreEngine fill:#fff3e0
+    style SubAgents fill:#f3e5f5
+    style MemoryLayer fill:#e8f5e9
+    style SandboxLayer fill:#ffebee
+    style ExternalTools fill:#fff8e1
+```
+
+**Описание архитектуры:**
+- **Пользовательский слой** : Точки входа пользовательских запросов (Web, IM, API, CLI)
+- **Основной движок** : Отвечает за оркестрацию задач, управление контекстом и планирование
+- **Пул суб-агентов** : Специализированные агенты выполняют конкретные задачи
+- **Слой памяти** : Управляет краткосрочным контекстом сессии и долгосрочной векторной памятью
+- **Слой песочницы** : Предоставляет безопасную среду для операций с файлами и выполнения кода
+- **Внешние инструменты** : Интегрирует MCP-сервисы, сетевые инструменты и кастомные расширения
+
 ### Skills & Tools
 
 Skills — это то, что позволяет DeerFlow делать почти что угодно.

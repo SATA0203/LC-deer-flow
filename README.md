@@ -570,6 +570,71 @@ Use it as-is. Or tear it apart and make it yours.
 
 ## Core Features
 
+### Architecture Overview
+
+```mermaid
+flowchart TB
+    subgraph UserLayer["User Layer"]
+        UI[Web Gateway / IM Clients]
+        CC[Claude Code CLI]
+        API[REST API]
+    end
+
+    subgraph CoreEngine["Core Engine"]
+        OM[Orchestrator Manager]
+        CM[Context Manager]
+        TM[Task Manager]
+    end
+
+    subgraph SubAgents["Sub-Agents Pool"]
+        SA1[Research Agent]
+        SA2[Code Agent]
+        SA3[Writing Agent]
+        SA4[Analysis Agent]
+    end
+
+    subgraph MemoryLayer["Memory Layer"]
+        STM[Short-Term Memory<br/>Session Context]
+        LTM[Long-Term Memory<br/>Vector Store]
+        PM[Procedural Memory<br/>Skills & Tools]
+    end
+
+    subgraph SandboxLayer["Sandbox Layer"]
+        FS[File System<br/>/mnt/workspace]
+        EXEC[Bash Execution<br/>Isolated Container]
+        NET[Network Access<br/>Controlled]
+    end
+
+    subgraph ExternalTools["External Tools"]
+        MCP[MCP Servers]
+        WEB[Web Search/Fetch]
+        CUSTOM[Custom Python Tools]
+    end
+
+    UserLayer --> CoreEngine
+    CoreEngine --> SubAgents
+    CoreEngine <--> MemoryLayer
+    SubAgents --> SandboxLayer
+    SubAgents --> ExternalTools
+    SandboxLayer -.-> MemoryLayer
+    
+    style UserLayer fill:#e1f5fe
+    style CoreEngine fill:#fff3e0
+    style SubAgents fill:#f3e5f5
+    style MemoryLayer fill:#e8f5e9
+    style SandboxLayer fill:#ffebee
+    style ExternalTools fill:#fff8e1
+```
+
+The architecture follows a layered design:
+
+1. **User Layer** - Multiple entry points (Web UI, IM bots, CLI, API)
+2. **Core Engine** - Orchestrates tasks, manages context, and routes to appropriate sub-agents
+3. **Sub-Agents Pool** - Specialized agents for different domains (research, code, writing, analysis)
+4. **Memory Layer** - Three-tier memory system (short-term session, long-term vector store, procedural skills)
+5. **Sandbox Layer** - Isolated execution environment with controlled file system, bash, and network access
+6. **External Tools** - Extensible tooling via MCP servers and custom integrations
+
 ### Skills & Tools
 
 Skills are what make DeerFlow do *almost anything*.

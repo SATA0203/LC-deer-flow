@@ -400,6 +400,70 @@ DeerFlow 2.0 不再是一个需要你自己拼装的 framework。它是一个开
 
 ## 核心特性
 
+### 架构概览
+
+```mermaid
+flowchart TB
+    subgraph UserLayer["用户层"]
+        UI[Web 网关 / IM 客户端]
+        CC[Claude Code CLI]
+        API[REST API]
+    end
+
+    subgraph CoreEngine["核心引擎"]
+        OM[编排管理器]
+        CM[上下文管理器]
+        TM[任务管理器]
+    end
+
+    subgraph SubAgents["子代理池"]
+        SA1[研究代理]
+        SA2[代码代理]
+        SA3[写作代理]
+        SA4[分析代理]
+    end
+
+    subgraph MemoryLayer["记忆层"]
+        STM[短期记忆<br/>会话上下文]
+        LTM[长期记忆<br/>向量存储]
+        PM[程序性记忆<br/>技能与工具]
+    end
+
+    subgraph SandboxLayer["沙盒层"]
+        FS[文件系统<br/>/mnt/workspace]
+        EXEC[Bash 执行<br/>隔离容器]
+        NET[网络访问<br/>受控]
+    end
+
+    subgraph ExternalTools["外部工具"]
+        MCP[MCP 服务器]
+        WEB[网页搜索/抓取]
+        CUSTOM[自定义 Python 工具]
+    end
+
+    UserLayer --> CoreEngine
+    CoreEngine --> SubAgents
+    CoreEngine <--> MemoryLayer
+    SubAgents --> SandboxLayer
+    SubAgents --> ExternalTools
+    SandboxLayer -.-> MemoryLayer
+    
+    style UserLayer fill:#e1f5fe
+    style CoreEngine fill:#fff3e0
+    style SubAgents fill:#f3e5f5
+    style MemoryLayer fill:#e8f5e9
+    style SandboxLayer fill:#ffebee
+    style ExternalTools fill:#fff8e1
+```
+
+**架构说明：**
+- **用户层**：接收用户请求的入口（Web、IM、API、CLI）
+- **核心引擎**：负责任务编排、上下文管理和调度
+- **子代理池**：专业化代理执行具体任务
+- **记忆层**：管理短期会话上下文和长期向量记忆
+- **沙盒层**：提供安全的文件操作和代码执行环境
+- **外部工具**：集成 MCP 服务、网络工具和自定义扩展
+
 ### Skills 与 Tools
 
 Skills 是 DeerFlow 能做“几乎任何事”的关键。

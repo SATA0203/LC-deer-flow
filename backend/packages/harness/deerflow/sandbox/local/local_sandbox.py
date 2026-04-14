@@ -95,12 +95,18 @@ class LocalSandbox(Sandbox):
     def _resolve_path(self, path: str) -> str:
         """
         Resolve container path to actual local path using mappings.
+        
+        SECURITY: Blocks symlink-based path traversal attacks by resolving
+        symlinks and verifying the final path is within allowed directories.
 
         Args:
             path: Path that might be a container path
 
         Returns:
             Resolved local path
+            
+        Raises:
+            ValueError: If path resolves outside allowed directories via symlink
         """
         path_str = str(path)
 
@@ -112,6 +118,27 @@ class LocalSandbox(Sandbox):
                 # Replace the container path prefix with local path
                 relative = path_str[len(container_path) :].lstrip("/")
                 resolved = str(Path(local_path) / relative) if relative else local_path
+                
+                # SECURITY: Resolve symlinks and verify path is still within allowed directory
+                try:
+                    resolved_real = os.path.realpath(resolved)
+                    local_path_real = os.path.realpath(local_path)
+                    
+                    # Check if resolved path is within the allowed local directory
+                    if not (resolved_real == local_path_real or 
+                            resolved_real.startswith(local_path_real + os.sep)):
+                        raise ValueError(
+                            f"Path traversal detected: {path} resolves to {resolved_real} "
+                            f"which is outside allowed directory {local_path_real}"
+                        )
+                except (OSError, ValueError) as e:
+                    if "Path traversal detected" in str(e):
+                        raise
+                    # If realpath fails (e.g., broken symlink), still block access
+                    raise ValueError(
+                        f"Cannot resolve path safely: {path} -> {resolved}"
+                    )
+                
                 return resolved
 
         # No mapping found, return original path

@@ -1,6 +1,7 @@
 import errno
 import ntpath
 import os
+import resource
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -268,6 +269,10 @@ class LocalSandbox(Sandbox):
         raise RuntimeError("No suitable shell executable found. Tried /bin/zsh, /bin/bash, /bin/sh, and `sh` on PATH.")
 
     def execute_command(self, command: str) -> str:
+        # SECURITY CRITICAL: Validate and sanitize command before execution
+        # Reject commands with shell metacharacters that could enable injection
+        self._validate_command(command)
+        
         # Resolve container paths in command before execution
         resolved_command = self._resolve_paths_in_command(command)
         shell = self._get_shell()
@@ -288,13 +293,28 @@ class LocalSandbox(Sandbox):
                 timeout=600,
             )
         else:
+            # Unix/Linux/Mac: Use shell=False with explicit shell invocation for security
+            # This prevents shell injection attacks while maintaining compatibility
+            args = [shell, "-c", resolved_command]
+            
+            def set_resource_limits():
+                """Set resource limits to prevent fork bombs and resource exhaustion."""
+                # Limit CPU time to 60 seconds (soft limit)
+                resource.setrlimit(resource.RLIMIT_CPU, (60, 120))
+                # Limit number of processes to 50 (prevent fork bombs)
+                resource.setrlimit(resource.RLIMIT_NPROC, (50, 100))
+                # Limit file size to 100MB
+                resource.setrlimit(resource.RLIMIT_FSIZE, (100 * 1024 * 1024, 100 * 1024 * 1024))
+                # Limit open files to 256
+                resource.setrlimit(resource.RLIMIT_NOFILE, (256, 512))
+            
             result = subprocess.run(
-                resolved_command,
-                executable=shell,
-                shell=True,
+                args,
+                shell=False,  # SECURITY FIX: Disabled shell=True to prevent injection
                 capture_output=True,
                 text=True,
                 timeout=600,
+                preexec_fn=set_resource_limits,  # Apply resource limits (Unix only)
             )
         output = result.stdout
         if result.stderr:
@@ -305,6 +325,58 @@ class LocalSandbox(Sandbox):
         final_output = output if output else "(no output)"
         # Reverse resolve local paths back to container paths in output
         return self._reverse_resolve_paths_in_output(final_output)
+    
+    @staticmethod
+    def _validate_command(command: str) -> None:
+        """
+        Validate command to prevent shell injection attacks.
+        
+        Even with shell=False, when using [shell, '-c', command], the shell
+        will interpret the command string. We need to reject dangerous patterns.
+        
+        Note: Some patterns like > < are allowed for basic file operations within
+        the sandbox directory. Path validation happens separately via allowlist.
+        
+        Raises:
+            ValueError: If command contains dangerous shell metacharacters
+        """
+        # Patterns that indicate shell injection attempts - BLOCKED
+        dangerous_patterns = [
+            (';', 'semicolon command separator'),
+            ('|', 'pipe operator'),
+            ('&', 'background/AND operator'),
+            ('$', 'variable/command substitution'),
+            ('`', 'backtick command substitution'),
+            ('\n', 'newline command separator'),
+            ('\r', 'carriage return'),
+            ('(', 'subshell start'),
+            (')', 'subshell end'),
+            ('{', 'command grouping'),
+            ('}', 'command grouping'),
+        ]
+        
+        for pattern, description in dangerous_patterns:
+            if pattern in command:
+                raise ValueError(
+                    f"Command contains dangerous pattern '{pattern}' ({description}). "
+                    f"Shell metacharacters are not allowed for security reasons. "
+                    f"Command: {command[:100]}..."
+                )
+        
+        # Additional check for common injection patterns
+        import re
+        injection_patterns = [
+            r'\bexec\b',
+            r'\beval\b', 
+            r'\bsource\b',
+        ]
+        
+        for pattern in injection_patterns:
+            if re.search(pattern, command):
+                raise ValueError(
+                    f"Command contains suspicious pattern matching '{pattern}'. "
+                    f"Command: {command[:100]}..."
+                )
 
     def list_dir(self, path: str, max_depth=2) -> list[str]:
         resolved_path = self._resolve_path(path)

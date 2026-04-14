@@ -69,15 +69,123 @@ class SubagentResult:
 _background_tasks: dict[str, SubagentResult] = {}
 _background_tasks_lock = threading.Lock()
 
-# Thread pool for background task scheduling and orchestration
-_scheduler_pool = ThreadPoolExecutor(max_workers=3, thread_name_prefix="subagent-scheduler-")
+# Thread pool manager for subagent execution with dynamic sizing
+class _SubagentPoolManager:
+    """Manages subagent thread pools with configurable max workers."""
+    
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._scheduler_pool: ThreadPoolExecutor | None = None
+        self._execution_pool: ThreadPoolExecutor | None = None
+        self._isolated_loop_pool: ThreadPoolExecutor | None = None
+        self._max_workers = 3  # Default, can be overridden
+    
+    def get_scheduler_pool(self, max_workers: int | None = None) -> ThreadPoolExecutor:
+        """Get or create the scheduler pool."""
+        if max_workers is not None:
+            self._max_workers = max_workers
+        
+        with self._lock:
+            if self._scheduler_pool is None or self._scheduler_pool._shutdown:
+                self._scheduler_pool = ThreadPoolExecutor(
+                    max_workers=self._max_workers, 
+                    thread_name_prefix="subagent-scheduler-"
+                )
+            return self._scheduler_pool
+    
+    def get_execution_pool(self, max_workers: int | None = None) -> ThreadPoolExecutor:
+        """Get or create the execution pool."""
+        if max_workers is not None:
+            self._max_workers = max_workers
+        
+        with self._lock:
+            if self._execution_pool is None or self._execution_pool._shutdown:
+                self._execution_pool = ThreadPoolExecutor(
+                    max_workers=max(self._max_workers * 2, 6),  # Larger pool for execution
+                    thread_name_prefix="subagent-exec-"
+                )
+            return self._execution_pool
+    
+    def get_isolated_loop_pool(self, max_workers: int | None = None) -> ThreadPoolExecutor:
+        """Get or create the isolated loop pool."""
+        if max_workers is not None:
+            self._max_workers = max_workers
+        
+        with self._lock:
+            if self._isolated_loop_pool is None or self._isolated_loop_pool._shutdown:
+                self._isolated_loop_pool = ThreadPoolExecutor(
+                    max_workers=self._max_workers, 
+                    thread_name_prefix="subagent-isolated-"
+                )
+            return self._isolated_loop_pool
+    
+    def shutdown_all(self, wait: bool = True) -> None:
+        """Shutdown all pools."""
+        with self._lock:
+            for pool in [self._scheduler_pool, self._execution_pool, self._isolated_loop_pool]:
+                if pool and not pool._shutdown:
+                    pool.shutdown(wait=wait)
+            self._scheduler_pool = None
+            self._execution_pool = None
+            self._isolated_loop_pool = None
+    
+    @property
+    def max_workers(self) -> int:
+        """Get current max workers setting."""
+        return self._max_workers
+    
+    @max_workers.setter
+    def max_workers(self, value: int) -> None:
+        """Update max workers (affects new pools only)."""
+        with self._lock:
+            self._max_workers = value
 
-# Thread pool for actual subagent execution (with timeout support)
-# Larger pool to avoid blocking when scheduler submits execution tasks
-_execution_pool = ThreadPoolExecutor(max_workers=3, thread_name_prefix="subagent-exec-")
+# Global pool manager instance
+_pool_manager = _SubagentPoolManager()
 
-# Dedicated pool for sync execute() calls made from an already-running event loop.
-_isolated_loop_pool = ThreadPoolExecutor(max_workers=3, thread_name_prefix="subagent-isolated-")
+
+def get_subagent_pools(max_workers: int | None = None):
+    """Get all subagent thread pools.
+    
+    Args:
+        max_workers: Optional override for max concurrent workers.
+    
+    Returns:
+        Tuple of (scheduler_pool, execution_pool, isolated_loop_pool)
+    """
+    return (
+        _pool_manager.get_scheduler_pool(max_workers),
+        _pool_manager.get_execution_pool(max_workers),
+        _pool_manager.get_isolated_loop_pool(max_workers)
+    )
+
+
+def shutdown_subagent_pools(wait: bool = True) -> None:
+    """Shutdown all subagent thread pools.
+    
+    Args:
+        wait: Whether to wait for pending tasks to complete.
+    """
+    _pool_manager.shutdown_all(wait)
+
+
+# Backward compatibility aliases (deprecated, will be removed in future version)
+def _get_scheduler_pool(max_workers: int | None = None) -> ThreadPoolExecutor:
+    """Deprecated: Use get_subagent_pools() instead."""
+    return _pool_manager.get_scheduler_pool(max_workers)
+
+def _get_execution_pool(max_workers: int | None = None) -> ThreadPoolExecutor:
+    """Deprecated: Use get_subagent_pools() instead."""
+    return _pool_manager.get_execution_pool(max_workers)
+
+def _get_isolated_loop_pool(max_workers: int | None = None) -> ThreadPoolExecutor:
+    """Deprecated: Use get_subagent_pools() instead."""
+    return _pool_manager.get_isolated_loop_pool(max_workers)
+
+# Legacy global variables for backward compatibility (point to managed pools)
+_scheduler_pool = _pool_manager.get_scheduler_pool()
+_execution_pool = _pool_manager.get_execution_pool()
+_isolated_loop_pool = _pool_manager.get_isolated_loop_pool()
 
 
 def _filter_tools(

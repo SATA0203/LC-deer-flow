@@ -6,6 +6,7 @@ from fastapi import FastAPI
 
 from app.gateway.config import get_gateway_config
 from app.gateway.deps import langgraph_runtime
+from app.gateway.error_handler import register_exception_handlers
 from app.gateway.routers import (
     agents,
     artifacts,
@@ -162,6 +163,9 @@ This gateway provides custom endpoints for models, MCP configuration, skills, an
             },
         ],
     )
+
+    # Register unified exception handlers
+    register_exception_handlers(app)
 
     # CORS is handled by nginx - no need for FastAPI middleware
 

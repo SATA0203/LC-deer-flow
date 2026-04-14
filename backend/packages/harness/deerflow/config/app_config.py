@@ -1,5 +1,6 @@
 import logging
 import os
+import threading
 from contextvars import ContextVar
 from pathlib import Path
 from typing import Any, Self
@@ -29,6 +30,9 @@ from deerflow.config.tool_search_config import ToolSearchConfig, load_tool_searc
 load_dotenv()
 
 logger = logging.getLogger(__name__)
+
+# Thread-safe lock for global config state
+_config_lock = threading.RLock()
 
 
 class CircuitBreakerConfig(BaseModel):
@@ -304,29 +308,39 @@ def get_app_config() -> AppConfig:
     underlying config file path or modification time changes. Use
     `reload_app_config()` to force a reload, or `reset_app_config()` to clear
     the cache.
+    
+    Thread-safe: Uses RLock to prevent race conditions during config reload.
     """
     global _app_config, _app_config_path, _app_config_mtime
 
+    # Fast path: check ContextVar override without lock (thread-local)
     runtime_override = _current_app_config.get()
     if runtime_override is not None:
         return runtime_override
 
+    # Check custom config without lock first (optimization)
     if _app_config is not None and _app_config_is_custom:
         return _app_config
 
-    resolved_path = AppConfig.resolve_config_path()
-    current_mtime = _get_config_mtime(resolved_path)
+    # Thread-safe check and reload
+    with _config_lock:
+        # Double-check after acquiring lock
+        if _app_config is not None and _app_config_is_custom:
+            return _app_config
 
-    should_reload = _app_config is None or _app_config_path != resolved_path or _app_config_mtime != current_mtime
-    if should_reload:
-        if _app_config_path == resolved_path and _app_config_mtime is not None and current_mtime is not None and _app_config_mtime != current_mtime:
-            logger.info(
-                "Config file has been modified (mtime: %s -> %s), reloading AppConfig",
-                _app_config_mtime,
-                current_mtime,
-            )
-        _load_and_cache_app_config(str(resolved_path))
-    return _app_config
+        resolved_path = AppConfig.resolve_config_path()
+        current_mtime = _get_config_mtime(resolved_path)
+
+        should_reload = _app_config is None or _app_config_path != resolved_path or _app_config_mtime != current_mtime
+        if should_reload:
+            if _app_config_path == resolved_path and _app_config_mtime is not None and current_mtime is not None and _app_config_mtime != current_mtime:
+                logger.info(
+                    "Config file has been modified (mtime: %s -> %s), reloading AppConfig",
+                    _app_config_mtime,
+                    current_mtime,
+                )
+            _load_and_cache_app_config(str(resolved_path))
+        return _app_config
 
 
 def reload_app_config(config_path: str | None = None) -> AppConfig:
@@ -341,8 +355,11 @@ def reload_app_config(config_path: str | None = None) -> AppConfig:
 
     Returns:
         The newly loaded AppConfig instance.
+    
+    Thread-safe: Uses lock to prevent concurrent reloads.
     """
-    return _load_and_cache_app_config(config_path)
+    with _config_lock:
+        return _load_and_cache_app_config(config_path)
 
 
 def reset_app_config() -> None:
@@ -351,12 +368,15 @@ def reset_app_config() -> None:
     This clears the singleton cache, causing the next call to
     `get_app_config()` to reload from file. Useful for testing
     or when switching between different configurations.
+    
+    Thread-safe: Uses lock to prevent race conditions.
     """
     global _app_config, _app_config_path, _app_config_mtime, _app_config_is_custom
-    _app_config = None
-    _app_config_path = None
-    _app_config_mtime = None
-    _app_config_is_custom = False
+    with _config_lock:
+        _app_config = None
+        _app_config_path = None
+        _app_config_mtime = None
+        _app_config_is_custom = False
 
 
 def set_app_config(config: AppConfig) -> None:
@@ -366,12 +386,15 @@ def set_app_config(config: AppConfig) -> None:
 
     Args:
         config: The AppConfig instance to use.
+    
+    Thread-safe: Uses lock to prevent race conditions.
     """
     global _app_config, _app_config_path, _app_config_mtime, _app_config_is_custom
-    _app_config = config
-    _app_config_path = None
-    _app_config_mtime = None
-    _app_config_is_custom = True
+    with _config_lock:
+        _app_config = config
+        _app_config_path = None
+        _app_config_mtime = None
+        _app_config_is_custom = True
 
 
 def peek_current_app_config() -> AppConfig | None:
